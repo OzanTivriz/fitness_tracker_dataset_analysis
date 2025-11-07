@@ -1,0 +1,357 @@
+---
+title: "Fitness Tracker Analysis"
+author: "Ozan Tivriz"
+date: "2025-11-06"
+output: html_document
+---
+
+This is an analysis of user activity data collected from a fitness tracker 
+application. The goal of this analysis is to understand patterns in users’
+physical activity, such asexercise duration, calories burned, and heart rate,
+and to identify trends that may differ between various activity types
+(e.g., running, walking, cycling). By examining these patterns, the analysis
+aims to provide insights into users’ fitness behavior and help improve 
+personalized recommendations for healthier lifestyles.
+
+## Importing Data
+
+First and most, we load the libiraries that we will use. Tidyverse is
+general analysis package, confli  cted helps us escape conflictions and
+scales for readable grafic scales. Finally, the reshape2 package is loaded
+for heatmap analysis
+```{r, echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
+knitr::opts_knit$set(root.dir = "C:/Users/Ozan Tivriz/Desktop/data")
+knitr::opts_chunk$set(echo = TRUE)
+Sys.setlocale("LC_TIME", "English_United States") 
+```
+
+```{r library, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(reshape2)
+```
+
+And importing the data.
+```{r import, warning=FALSE, message=FALSE}
+trackings <- read.csv("fitness_tracker_dataset/random_fitness_dataset.csv")
+```
+
+## Cleaning
+
+After checking the data, we see that there is not that much of a cleaning left.
+But it could be better so we create a new copy of our data to avoid unreversable
+changes.
+```{r tracking_v2, warning=FALSE, message=FALSE}
+trackings_v2 <- trackings
+```
+
+Changing data type of timestamp column and adding few new columns for anaylsis
+```{r timestamp column, warning=FALSE, message=FALSE}
+trackings_v2$timestamp <- ymd_hms(trackings_v2$timestamp, tz = "UTC")
+
+trackings_v2$day_of_week <- format(as.Date(trackings_v2$timestamp), "%A")
+trackings_v2$time <- as.POSIXct(format(trackings_v2$timestamp, "%H:%M"),format="%H:%M")
+```
+
+Creating vector for day of week.
+```{r days vector, warning=FALSE, message=FALSE}
+days <- c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+trackings_v2$day_of_week <- factor(trackings_v2$day_of_week, levels = days)
+```
+
+And adding a calculated column to make some anaylsis easier.
+```{r cal_per_min column, message=FALSE, warning=FALSE}
+trackings_v2$cal_per_min <- round(trackings_v2$calories_burned/trackings_v2$duration_min, 0)
+```
+
+If we check the cal_per_min column we see some values that is impossible for humans.
+```{r max calpermin, warning=FALSE}
+max(trackings_v2$cal_per_min)
+```
+
+We have to filter the data for accurate analysis. We will consider 30 calories
+per minute as the humanly possible limit.
+```{r filter calpermin, message=FALSE, warning=FALSE}
+trackings_v2 <- trackings_v2 %>%
+  filter(cal_per_min < 30)
+```
+
+
+We also create many different data frames but for the purpos of readability, I
+will not include all of them. Here is an example one of them.
+```{r mean_activity df, warning=FALSE, message=FALSE}
+mean_activity <- trackings_v2 %>% 
+  group_by(activity_type) %>% 
+  summarise(
+    mean_duration = mean(duration_min),
+    med_duration = median(duration_min)
+  )
+```
+
+```{r all other df, warning=FALSE, message=FALSE, echo=FALSE}
+# for calories burned comparison
+mean_calories <- trackings_v2 %>% 
+  group_by(activity_type) %>% 
+  summarise(
+    mean_calories = mean(calories_burned),
+    med_calories = median(calories_burned)
+  )
+
+# for cal_per_min comparison
+mean_cal_per_min <- trackings_v2 %>% 
+  group_by(activity_type) %>% 
+  summarise(
+    mean_cal_per_min = mean(cal_per_min),
+    med_cal_per_min = median(cal_per_min)
+  )
+
+# for age comparison
+mean_age <- trackings_v2 %>% 
+  group_by(activity_type) %>% 
+  summarise(
+    mean_age = mean(age),
+    med_age = median(age)
+  )
+
+# age hearth rate comparison
+summary_age <- trackings_v2 %>%
+  group_by(age, activity_type) %>%
+  summarise(
+    heart_rate_avg = round(mean(heart_rate_avg),0))
+```
+
+I also create a data frame for correlation analysis.
+```{r cor_df, message=FALSE, warning=FALSE}
+cor_df <- trackings_v2 %>% 
+  select(age,heart_rate_avg,calories_burned,duration_min)
+
+cor_df <- cor_df %>% 
+  rename(Age  = age,
+         HeartRate = heart_rate_avg,
+         Calories = calories_burned,
+         Duration = duration_min)
+```
+
+## Analysis
+
+Here we see mean and median duration time for each activity type.
+```{r duraiton per activity ggplot, message=FALSE, warning=FALSE, echo=FALSE}
+ggplot(mean_activity, aes(x=activity_type, y=mean_duration)) +
+  geom_bar(stat = "identity", fill = "#02bfe7", alpha = 0.8)+
+  geom_point(aes(y = med_duration), size = 2, color = "red" ) +
+  theme_minimal() +
+  geom_text(aes(y=med_duration, label = med_duration),vjust = 1.5) +
+  labs(title = "Duration Time per Activity",
+       x = "Activity Type",
+       y = "Mean Duration Min")
+```
+
+And mean and median calories burned for each activity type.
+```{r calories per activity, warning=FALSE, message=FALSE, echo=FALSE}
+ggplot(mean_calories, aes(x=activity_type, y=mean_calories)) +
+  geom_bar(stat = "identity", fill = "#86CD82", alpha = 0.8)+
+  geom_point(aes(y = med_calories), size = 2, color = "red" ) +
+  theme_minimal() +
+  geom_text(aes(y=med_calories, label = med_calories),vjust = 1.5) +
+  labs(title = "Calories Burned per Activity",
+       x = "Activity Type",
+       y = "Mean Calories Burned")
+```
+
+In here, we see callories burned per min by activity.
+```{r cal per min by act, message=FALSE, warning=FALSE, echo=FALSE}
+ggplot(mean_cal_per_min, aes(x=activity_type, y=mean_cal_per_min)) +
+  geom_bar(stat = "identity", fill = "#e31c3d", alpha = 0.7)+
+  geom_point(aes(y = med_cal_per_min), size = 2, color = "#ffffff" ) +
+  theme_minimal() +
+  geom_text(aes(y=med_cal_per_min, label = med_cal_per_min),vjust = 1.5) +
+  labs(title = "Calories Burned per Min by Activity",
+       x = "Activity Type",
+       y = "Mean Calories Burned")
+```
+
+Mean and meadian ages for each activity type.
+```{r age activity, message=FALSE, warning=FALSE, echo=FALSE}
+ggplot(mean_age, aes(x=activity_type, y=mean_age)) +
+  geom_bar(stat = "identity", fill = "#aeb0b5", alpha = 0.8)+
+  geom_point(aes(y = med_age), size = 2, color = "red" ) +
+  theme_minimal() +
+  geom_text(aes(y=med_age, label = med_age),vjust = 1.5) +
+  labs(title = "Ages by Activity",
+       x = "Activity Type",
+       y = "Age")
+
+```
+
+This chart shows how each activity is distributed across the days of the week.
+```{r activities day of week, warning=FALSE, message=FALSE, echo=FALSE}
+ggplot(trackings_v2) +
+  geom_bar(aes(x=activity_type, fill = activity_type)) +
+  facet_wrap(~day_of_week)+
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1,),
+        legend.position = "none")+
+  labs(title = "Activities by Day of Week",
+       x = "Activity Type",
+       y = "Count"
+  )
+```
+
+Relationship between age and average heart rate for each activity type.
+```{r age vs avg heart, warning=FALSE, message=FALSE, echo=FALSE}
+ggplot(summary_age, aes(x = age, y = heart_rate_avg, color = activity_type)) +
+  geom_line(size = 1) +
+  facet_wrap(~activity_type) +
+  theme_minimal() +
+  theme(legend.position = "none") + 
+  labs(title = "Age vs Avg. Heart Rate by Activity Type",
+       x= "Age",
+       y = "Average Hearth Rate")
+```
+
+This code block shows us if there is any correlations between age, hearth rate,
+calories and duration. We created an data frame in background that only includes
+age, hearth rate, calories and duration column and named it cor_df.
+Also we see that there is low correlation between these 4.
+```{r cor bak, warning=FALSE}
+cor(cor_df, use = "complete.obs")
+```
+
+We melt the correlation data frame for easier interpretation.
+```{r melted cor, message=FALSE,warning=FALSE}
+melted_cor <- melt(cor(cor_df[,c("Age","HeartRate","Calories","Duration")],
+                       use = "complete.obs"))
+
+```
+
+This heatmap shows the correlations between age, heart rate, calories and duration.
+```{r correlation heatmanp, message=FALSE,warning=FALSE,echo=FALSE}
+# correlation heatmap
+ggplot(melted_cor, aes(Var1, Var2, fill = value))+
+  geom_tile() +
+  geom_text (aes(label=round(value,2)), color = "black", size = 4) +
+  scale_fill_gradient2(low = "blue", mid = "white", high= "red", midpoint = 0) +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  labs (title = "Correlation Heatmap",
+        x= "",
+        y= "")
+
+```
+
+Also a comparison by gender.
+
+```{r bar graph activity gender, warning=FALSE, echo=FALSE, message=FALSE}
+ggplot(trackings_v2) +
+  geom_bar(aes(x = activity_type, fill=gender), position = "dodge") +
+  scale_fill_manual(values = c("Male" = "#7CB9E8",
+                               "Female" = "pink",
+                               "Other" = "gray")) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1,)) +
+  labs (title = "Activities by Gender",
+        x = "Activity Type",
+        y = "Count",
+        fill = "Gender")
+
+```
+```{r piechart pre calculation, echo=FALSE, warning=FALSE, message=FALSE}
+# calculating percetange of activity for each gender
+activity_summary <- trackings_v2 %>%
+  group_by(gender, activity_type) %>%
+  summarise(count = n()) %>%
+  mutate(percent = count / sum(count) * 100)
+
+# finding the top activity for each gender
+top_activities <- activity_summary %>%
+  group_by(gender) %>%
+  slice_max(order_by = percent, n = 1) %>%
+  select(gender, activity_type)
+
+# higlighting the column so we can use it on pie chart
+activity_summary <- activity_summary %>%
+  left_join(top_activities, by = "gender", suffix = c("", "_top")) %>%
+  mutate(alpha_val = ifelse(activity_type == activity_type_top, 1, 0.3))
+
+```
+
+And the pie chart that shows the top activity for each gender.
+```{r pie chart activity by gender top, echo=FALSE, warning=FALSE, message=FALSE}
+ggplot(activity_summary, aes(x = "", y = percent, fill = activity_type)) +
+  geom_bar(stat = "identity",width = 1,color = "white",
+           aes(alpha = alpha_val)) +
+  scale_alpha_identity(guide = "none") +
+  coord_polar(theta = "y") +
+  facet_wrap(~gender) +
+  geom_text(aes(label = ifelse(activity_type == activity_type_top,
+                               paste0(activity_type, "\n", round(percent, 1), "%"), "")),
+            position = position_stack(vjust = 0.5),
+            color = "white", size = 4.5, fontface = "bold") +
+  theme_void() +
+  theme(
+    strip.text = element_text(size = 13),
+    legend.position = "bottom",
+    legend.title = element_blank(),
+    plot.title = element_text(size = 15, hjust = 0.5)
+    ) +
+  ggtitle("Top Activity by Gender")
+```
+```{r least activies by gender, message=FALSE, echo=FALSE, warning=FALSE}
+# finding least activity
+least_activities <- activity_summary %>%
+  group_by(gender) %>%
+  slice_min(order_by = percent, n = 1) %>%
+  select(gender, activity_type)
+
+# again for highlighting using alpha (1 ve 0.3 kllan)
+activity_summary <- activity_summary %>%
+  left_join(least_activities, by = "gender", suffix = c("", "_least")) %>%
+  mutate(alpha_val = ifelse(activity_type == activity_type_least, 1, 0.3))
+```
+
+Also the pie chart that shows the least activity for each gender.
+```{r pie chart for least activies by gender, echo=FALSE, warning=FALSE, message=FALSE}
+ggplot(activity_summary, aes(x = "", y = percent, fill = activity_type)) +
+  geom_bar(
+    stat = "identity",
+    width = 1,
+    color = "white",
+    aes(alpha = alpha_val)
+  ) +
+  scale_alpha_identity(guide = "none") +
+  coord_polar(theta = "y") +
+  facet_wrap(~gender) +
+  geom_text(aes(label = ifelse(activity_type == activity_type_least,
+                               paste0(activity_type, "\n", round(percent, 1), "%"), "")),
+            position = position_stack(vjust = 0.5),
+            color = "white", size = 4.5, fontface = "bold") +
+  theme_void() +
+  theme(
+    strip.text = element_text(size = 13),
+    legend.position = "bottom",
+    legend.title = element_blank(),
+    plot.title = element_text(size = 15, hjust = 0.5)
+  ) +
+  ggtitle("Least Activity by Gender")
+
+```
+
+
+## Conclusion
+
+\*Swimming is the most time spend activity.
+
+\*HIIT burns calories the most.
+
+\*Calories per minute is almost equal between HIIT and swimming.
+
+\*Older people are more like to do swimming activity.
+
+\*There is not much relations between day of week and activity.
+
+\*There is almost to none correlation between age, heart rate, calories burned 
+and duration.
+
+\*Yoga is the most popular activity in both male and female.
+
+\*Cycling is the least common activity among females, walking among males,and 
+swimming among others.
